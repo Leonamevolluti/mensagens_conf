@@ -8,11 +8,20 @@ interface DailySuccessRateProps {
 }
 
 export function DailySuccessRate({ data }: DailySuccessRateProps) {
-  const formattedData = data.map(item => ({
-    ...item,
-    displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
-    rate: parseFloat(item.rate.toFixed(1)),
-  }));
+  const formattedData = data
+    .filter(item => {
+      try {
+        const parsed = parseISO(item.date);
+        return !isNaN(parsed.getTime());
+      } catch {
+        return false;
+      }
+    })
+    .map(item => ({
+      ...item,
+      displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
+      rate: parseFloat(item.rate.toFixed(1)),
+    }));
 
   return (
     <Card className="h-full">
