@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { format, isValid, parse, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AlertCircle, Phone, Mail, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,6 +7,25 @@ import { AppointmentWithPatient } from '@/types/dashboard';
 
 interface PendingPatientsListProps {
   data: AppointmentWithPatient[];
+}
+
+function safeParseAppointmentDate(value: string) {
+  const iso = parseISO(value);
+  if (isValid(iso)) return iso;
+
+  const br = parse(value, 'dd/MM/yyyy', new Date());
+  if (isValid(br)) return br;
+
+  const ymd = parse(value, 'yyyy-MM-dd', new Date());
+  if (isValid(ymd)) return ymd;
+
+  return null;
+}
+
+function formatAppointmentDate(value?: string) {
+  if (!value) return '—';
+  const parsed = safeParseAppointmentDate(value);
+  return parsed ? format(parsed, 'dd/MM/yyyy', { locale: ptBR }) : '—';
 }
 
 export function PendingPatientsList({ data }: PendingPatientsListProps) {
@@ -49,7 +68,7 @@ export function PendingPatientsList({ data }: PendingPatientsListProps) {
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          {format(parseISO(appointment.appointment_date), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatAppointmentDate(appointment.appointment_date)}
                         </span>
                         {appointment.patients?.phone && (
                           <span className="flex items-center gap-1">

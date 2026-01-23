@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { format, isValid, parse, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Check, Clock, User, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,28 @@ import { AppointmentWithPatient } from '@/types/dashboard';
 
 interface RecentSendsTableProps {
   data: AppointmentWithPatient[];
+}
+
+function safeParseAppointmentDate(value: string) {
+  // Most common cases for this project:
+  // - yyyy-MM-dd (stored as text)
+  // - dd/MM/yyyy (human formatted)
+  const iso = parseISO(value);
+  if (isValid(iso)) return iso;
+
+  const br = parse(value, 'dd/MM/yyyy', new Date());
+  if (isValid(br)) return br;
+
+  const ymd = parse(value, 'yyyy-MM-dd', new Date());
+  if (isValid(ymd)) return ymd;
+
+  return null;
+}
+
+function formatAppointmentDate(value?: string) {
+  if (!value) return '—';
+  const parsed = safeParseAppointmentDate(value);
+  return parsed ? format(parsed, 'dd/MM/yyyy', { locale: ptBR }) : '—';
 }
 
 export function RecentSendsTable({ data }: RecentSendsTableProps) {
@@ -47,7 +69,7 @@ export function RecentSendsTable({ data }: RecentSendsTableProps) {
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right hidden sm:block">
                       <p className="text-sm text-foreground">
-                        {format(parseISO(appointment.appointment_date), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatAppointmentDate(appointment.appointment_date)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {appointment.appointment_time?.substring(0, 5) || '--:--'}
