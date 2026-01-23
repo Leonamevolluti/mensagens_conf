@@ -9,12 +9,20 @@ interface TimelineChartProps {
 }
 
 export function TimelineChart({ data }: TimelineChartProps) {
-  const formattedData = data.map(item => ({
-    ...item,
-    displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
-    total: item.sent + item.pending,
-  }));
-
+  const formattedData = data
+    .filter(item => {
+      try {
+        const parsed = parseISO(item.date);
+        return !isNaN(parsed.getTime());
+      } catch {
+        return false;
+      }
+    })
+    .map(item => ({
+      ...item,
+      displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
+      total: item.sent + item.pending,
+    }));
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
