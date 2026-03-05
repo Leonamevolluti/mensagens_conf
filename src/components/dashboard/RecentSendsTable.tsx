@@ -3,14 +3,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AppointmentWithPatient } from '@/types/dashboard';
-import { formatDateFull } from '@/lib/dates';
+import { formatDateFull, safeParseDate } from '@/lib/dates';
 
 interface RecentSendsTableProps {
   data: AppointmentWithPatient[];
 }
 
 export function RecentSendsTable({ data }: RecentSendsTableProps) {
-  const recentData = data.slice(0, 10);
+  const recentData = [...data]
+    .sort((a, b) => {
+      const dateA = safeParseDate(a.appointment_date)?.getTime() ?? 0;
+      const dateB = safeParseDate(b.appointment_date)?.getTime() ?? 0;
+      return dateB - dateA;
+    })
+    .slice(0, 10);
 
   return (
     <Card className="h-full">

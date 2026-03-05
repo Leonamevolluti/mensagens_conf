@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { safeParseDate } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { 
   AppointmentWithPatient, 
@@ -108,8 +109,12 @@ export function calculateTimelineData(data: AppointmentWithPatient[]): TimelineD
       date,
       ...values,
     }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-30); // Last 30 days
+    .sort((a, b) => {
+      const dateA = safeParseDate(a.date)?.getTime() ?? 0;
+      const dateB = safeParseDate(b.date)?.getTime() ?? 0;
+      return dateA - dateB;
+    })
+    .slice(-30);
 }
 
 export function calculateProfessionalData(data: AppointmentWithPatient[]): ProfessionalData[] {
@@ -208,6 +213,10 @@ export function getDailySuccessRate(data: AppointmentWithPatient[]): { date: str
       date,
       rate: values.total > 0 ? (values.sent / values.total) * 100 : 0,
     }))
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .sort((a, b) => {
+      const dateA = safeParseDate(a.date)?.getTime() ?? 0;
+      const dateB = safeParseDate(b.date)?.getTime() ?? 0;
+      return dateA - dateB;
+    })
     .slice(-14);
 }
