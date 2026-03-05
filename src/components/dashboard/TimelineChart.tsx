@@ -1,8 +1,7 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TimelineData } from '@/types/dashboard';
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeParseDate, formatDateShort } from '@/lib/dates';
 
 interface TimelineChartProps {
   data: TimelineData[];
@@ -10,17 +9,10 @@ interface TimelineChartProps {
 
 export function TimelineChart({ data }: TimelineChartProps) {
   const formattedData = data
-    .filter(item => {
-      try {
-        const parsed = parseISO(item.date);
-        return !isNaN(parsed.getTime());
-      } catch {
-        return false;
-      }
-    })
+    .filter(item => safeParseDate(item.date) !== null)
     .map(item => ({
       ...item,
-      displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
+      displayDate: formatDateShort(item.date),
       total: item.sent + item.pending,
     }));
   return (

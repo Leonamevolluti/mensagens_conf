@@ -1,7 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { safeParseDate, formatDateShort } from '@/lib/dates';
 
 interface DailySuccessRateProps {
   data: { date: string; rate: number }[];
@@ -9,17 +8,10 @@ interface DailySuccessRateProps {
 
 export function DailySuccessRate({ data }: DailySuccessRateProps) {
   const formattedData = data
-    .filter(item => {
-      try {
-        const parsed = parseISO(item.date);
-        return !isNaN(parsed.getTime());
-      } catch {
-        return false;
-      }
-    })
+    .filter(item => safeParseDate(item.date) !== null)
     .map(item => ({
       ...item,
-      displayDate: format(parseISO(item.date), 'dd/MM', { locale: ptBR }),
+      displayDate: formatDateShort(item.date),
       rate: parseFloat(item.rate.toFixed(1)),
     }));
 
