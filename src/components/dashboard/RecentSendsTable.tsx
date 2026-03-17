@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AppointmentWithPatient } from '@/types/dashboard';
-import { formatDateFull } from '@/lib/dates';
-import { format, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { formatDateFull, safeParseDate } from '@/lib/dates';
+import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface RecentSendsTableProps {
@@ -34,19 +34,34 @@ function getStatusInfo(appointment: AppointmentWithPatient) {
 }
 
 export function RecentSendsTable({ data }: RecentSendsTableProps) {
-  // Filtra pelos registros cujo created_at é de hoje
-  // (o n8n roda hoje para confirmar agendamentos de amanhã)
-  const todayStart = startOfDay(new Date()).getTime();
-  const todayEnd = endOfDay(new Date()).getTime();
+  const todayStr = format(new Date(), 'dd/MM/yyyy');
+
+  // O campo mensagem_enviada tem formato "dd/MM/yyyy HH:mm" (ex: "17/03/2026 08:04")
+  // Para registros sem mensagem_enviada (FALSE/pendentes), usamos o created_at:
+  // o n8n roda ~22h UTC do dia anterior = hoje no Brasil (UTC-3)
+  // Então created_at entre ontem 21h UTC e hoje 21h UTC = rodou hoje no Brasil
+  const nowUTC = new Date();
+  // Início: ontem às 21:00 UTC
+  const start = new Date(subDays(nowUTC, 1));
+  start.setUTCHours(21, 0, 0, 0);
+  // Fim: hoje às 21:00 UTC
+  const end = new Date(nowUTC);
+  end.setUTCHours(21, 0, 0, 0);
 
   const todayData = [...data]
     .filter(a => {
-      if (!a.created_at) return false;
-      const ts = parseISO(a.created_at).getTime();
-      return ts >= todayStart && ts <= todayEnd;
+      // Prioridade 1: se tem mensagem_enviada, usa ela (formato dd/MM/yyyy HH:mm)
+      if (a.mensagem_enviada) {
+        return a.mensagem_enviada.startsWith(todayStr);
+      }
+      // Prioridade 2: sem mensagem_enviada, usa created_at no range de hoje (Brasil)
+      if (a.created_at) {
+        const ts = new Date(a.created_at).getTime();
+        return ts >= start.getTime() && ts < end.getTime();
+      }
+      return false;
     })
     .sort((a, b) => {
-      // Ordena por horário do agendamento
       const timeA = a.appointment_time || '00:00';
       const timeB = b.appointment_time || '00:00';
       return timeA.localeCompare(timeB);
@@ -64,7 +79,7 @@ export function RecentSendsTable({ data }: RecentSendsTableProps) {
           <div>
             <CardTitle className="text-lg font-semibold">Envios de Hoje</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Automação executada em {format(new Date(), "dd/MM/yyyy", { locale: ptBR })} • {total} registros
+              Agendamentos para {format(new Date(), "dd/MM/yyyy", { locale: ptBR })} • {total} registros
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
@@ -110,20 +125,21 @@ export function RecentSendsTable({ data }: RecentSendsTableProps) {
                         <p className="text-xs text-muted-foreground truncate">
                           {appointment.procedure_name}
                         </p>
-                        {/* Data do agendamento confirmado */}
                         <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
                           <Calendar className="h-3 w-3" />
                           <span>
                             Consulta: {formatDateFull(appointment.appointment_date)} às {appointment.appointment_time?.substring(0, 5) || '--:--'}
                           </span>
                         </div>
+                        {appointment.mensagem_enviada && (
+                          <p className="text-xs text-success mt-0.5">
+                            Enviada em: {appointment.mensagem_enviada}
+                          </p>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      <Badge
-                        variant="secondary"
-                        className={statusInfo.className}
-                      >
+                    <div className="flex-shrink-0 ml-2">
+                      <Badge variant="secondary" className={statusInfo.className}>
                         {statusInfo.icon}
                         {statusInfo.label}
                       </Badge>
