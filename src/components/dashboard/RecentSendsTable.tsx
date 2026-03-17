@@ -3,17 +3,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AppointmentWithPatient } from '@/types/dashboard';
-import { formatDateFull, safeParseDate } from '@/lib/dates';
+import { formatDateFull } from '@/lib/dates';
 
 interface RecentSendsTableProps {
   data: AppointmentWithPatient[];
 }
 
 export function RecentSendsTable({ data }: RecentSendsTableProps) {
+  // BUG FIX: Antes ordenava por appointment_date (data da consulta futura),
+  // mostrando consultas mais distantes, não os registros mais recentes.
+  // Agora ordena por created_at (timestamp real de criação no banco).
   const recentData = [...data]
     .sort((a, b) => {
-      const dateA = safeParseDate(a.appointment_date)?.getTime() ?? 0;
-      const dateB = safeParseDate(b.appointment_date)?.getTime() ?? 0;
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       return dateB - dateA;
     })
     .slice(0, 10);
