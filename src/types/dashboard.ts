@@ -19,6 +19,7 @@ export interface Appointment {
   professional_name: string;
   status: string;
   message_sent: boolean;
+  mensagem_enviada: string | null;
   created_at: string;
 }
 
