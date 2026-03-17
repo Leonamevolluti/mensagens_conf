@@ -2,13 +2,14 @@ import { Check, Clock, User, XCircle, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { AppointmentWithPatient } from '@/types/dashboard';
+import { AppointmentWithPatient, DashboardFilters } from '@/types/dashboard';
 import { formatDateFull, safeParseDate } from '@/lib/dates';
 import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface RecentSendsTableProps {
   data: AppointmentWithPatient[];
+  filters: DashboardFilters;
 }
 
 function getStatusInfo(appointment: AppointmentWithPatient) {
@@ -33,54 +34,63 @@ function getStatusInfo(appointment: AppointmentWithPatient) {
   };
 }
 
-export function RecentSendsTable({ data }: RecentSendsTableProps) {
-  const todayStr = format(new Date(), 'dd/MM/yyyy');
+export function RecentSendsTable({ data, filters }: RecentSendsTableProps) {
+  const hasDateFilter = !!(filters.startDate || filters.endDate);
 
-  // O campo mensagem_enviada tem formato "dd/MM/yyyy HH:mm" (ex: "17/03/2026 08:04")
-  // Para registros sem mensagem_enviada (FALSE/pendentes), usamos o created_at:
-  // o n8n roda ~22h UTC do dia anterior = hoje no Brasil (UTC-3)
-  // Então created_at entre ontem 21h UTC e hoje 21h UTC = rodou hoje no Brasil
-  const nowUTC = new Date();
-  // Início: ontem às 21:00 UTC
-  const start = new Date(subDays(nowUTC, 1));
-  start.setUTCHours(21, 0, 0, 0);
-  // Fim: hoje às 21:00 UTC
-  const end = new Date(nowUTC);
-  end.setUTCHours(21, 0, 0, 0);
+  // --- Modo filtro de período: mostra todos os registros já filtrados ---
+  let displayData: AppointmentWithPatient[];
+  let title: string;
+  let subtitle: string;
 
-  const todayData = [...data]
-    .filter(a => {
-      // Prioridade 1: se tem mensagem_enviada, usa ela (formato dd/MM/yyyy HH:mm)
-      if (a.mensagem_enviada) {
-        return a.mensagem_enviada.startsWith(todayStr);
-      }
-      // Prioridade 2: sem mensagem_enviada, usa created_at no range de hoje (Brasil)
-      if (a.created_at) {
-        const ts = new Date(a.created_at).getTime();
-        return ts >= start.getTime() && ts < end.getTime();
-      }
-      return false;
-    })
-    .sort((a, b) => {
-      const timeA = a.appointment_time || '00:00';
-      const timeB = b.appointment_time || '00:00';
-      return timeA.localeCompare(timeB);
+  if (hasDateFilter) {
+    // O useDashboardData já aplicou o filtro de data no Supabase,
+    // então 'data' já contém só o período selecionado
+    displayData = [...data].sort((a, b) => {
+      const dateA = safeParseDate(a.appointment_date)?.getTime() ?? 0;
+      const dateB = safeParseDate(b.appointment_date)?.getTime() ?? 0;
+      if (dateA !== dateB) return dateA - dateB;
+      return (a.appointment_time || '').localeCompare(b.appointment_time || '');
     });
 
-  const sentCount = todayData.filter(a => a.message_sent).length;
-  const errorCount = todayData.filter(a => !a.message_sent && a.status === 'Error').length;
-  const pendingCount = todayData.filter(a => !a.message_sent && a.status !== 'Error').length;
-  const total = todayData.length;
+    const start = filters.startDate ? format(filters.startDate, 'dd/MM/yyyy', { locale: ptBR }) : '?';
+    const end = filters.endDate ? format(filters.endDate, 'dd/MM/yyyy', { locale: ptBR }) : '?';
+    title = 'Envios do Período';
+    subtitle = `${start} até ${end} • ${displayData.length} registros`;
+  } else {
+    // --- Modo padrão: só os envios de hoje ---
+    const todayStr = format(new Date(), 'dd/MM/yyyy');
+    const nowUTC = new Date();
+    const start = new Date(subDays(nowUTC, 1));
+    start.setUTCHours(21, 0, 0, 0);
+    const end = new Date(nowUTC);
+    end.setUTCHours(21, 0, 0, 0);
+
+    displayData = [...data]
+      .filter(a => {
+        if (a.mensagem_enviada) return a.mensagem_enviada.startsWith(todayStr);
+        if (a.created_at) {
+          const ts = new Date(a.created_at).getTime();
+          return ts >= start.getTime() && ts < end.getTime();
+        }
+        return false;
+      })
+      .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''));
+
+    title = 'Envios de Hoje';
+    subtitle = `Agendamentos para ${format(new Date(), 'dd/MM/yyyy', { locale: ptBR })} • ${displayData.length} registros`;
+  }
+
+  const sentCount = displayData.filter(a => a.message_sent).length;
+  const errorCount = displayData.filter(a => !a.message_sent && a.status === 'Error').length;
+  const pendingCount = displayData.filter(a => !a.message_sent && a.status !== 'Error').length;
 
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between flex-wrap gap-2">
           <div>
-            <CardTitle className="text-lg font-semibold">Envios de Hoje</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Agendamentos para {format(new Date(), "dd/MM/yyyy", { locale: ptBR })} • {total} registros
-            </p>
+            <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
             <span className="px-2 py-1 rounded-full bg-success/10 text-success font-medium">
@@ -102,12 +112,12 @@ export function RecentSendsTable({ data }: RecentSendsTableProps) {
       <CardContent className="p-0">
         <ScrollArea className="h-[420px]">
           <div className="space-y-1 p-4 pt-0">
-            {todayData.length === 0 ? (
+            {displayData.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
-                Nenhum envio registrado hoje
+                Nenhum envio encontrado
               </p>
             ) : (
-              todayData.map((appointment) => {
+              displayData.map((appointment) => {
                 const statusInfo = getStatusInfo(appointment);
                 return (
                   <div
