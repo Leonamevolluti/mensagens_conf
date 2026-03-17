@@ -170,7 +170,7 @@ const Index = () => {
 
         {/* Tables Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <RecentSendsTable data={appointments} />
+          <RecentSendsTable data={appointments} filters={filters} />
           <PendingPatientsList data={appointments} />
         </div>
       </main>
