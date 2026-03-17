@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { safeParseDate, formatDateShort } from '@/lib/dates';
+import { safeParseDate } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { 
   AppointmentWithPatient, 
@@ -10,30 +10,24 @@ import {
   ProcedureData,
   HourlyData
 } from '@/types/dashboard';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 
 export function useDashboardData(filters: DashboardFilters) {
   return useQuery({
     queryKey: ['appointments', filters],
     queryFn: async () => {
-      // BUG FIX #1: O banco armazena datas como 'dd-MM-yyyy', então a ordenação
-      // por appointment_date (string) seria lexicográfica e incorreta.
-      // Ordenamos por created_at que é um timestamp ISO real.
       let query = supabase
         .from('appointments')
-        .select(`
-          *,
-          patients (*)
-        `)
+        .select(`*, patients (*)`)
         .order('created_at', { ascending: false });
 
-      // BUG FIX #2: Os filtros de data enviavam 'yyyy-MM-dd' para o Supabase,
-      // mas o banco armazena no formato 'dd-MM-yyyy'. Convertemos corretamente.
+      // Filtro de data usa created_at (quando a automação rodou),
+      // que é um timestamp ISO real e permite filtro correto por período.
       if (filters.startDate) {
-        query = query.gte('appointment_date', format(filters.startDate, 'dd-MM-yyyy'));
+        query = query.gte('created_at', startOfDay(filters.startDate).toISOString());
       }
       if (filters.endDate) {
-        query = query.lte('appointment_date', format(filters.endDate, 'dd-MM-yyyy'));
+        query = query.lte('created_at', endOfDay(filters.endDate).toISOString());
       }
 
       if (filters.professional && filters.professional !== 'all') {
@@ -47,11 +41,7 @@ export function useDashboardData(filters: DashboardFilters) {
       }
 
       const { data, error } = await query;
-
-      if (error) {
-        throw error;
-      }
-
+      if (error) throw error;
       return (data || []) as AppointmentWithPatient[];
     },
   });
@@ -65,11 +55,7 @@ export function useProfessionals() {
         .from('appointments')
         .select('professional_name')
         .order('professional_name');
-
-      if (error) {
-        throw error;
-      }
-
+      if (error) throw error;
       const uniqueProfessionals = [...new Set(data?.map(item => item.professional_name) || [])];
       return uniqueProfessionals.filter(Boolean);
     },
@@ -81,27 +67,16 @@ export function calculateMetrics(data: AppointmentWithPatient[]): DashboardMetri
   const totalSent = data.filter(a => a.message_sent).length;
   const totalPending = totalAppointments - totalSent;
   const sendRate = totalAppointments > 0 ? (totalSent / totalAppointments) * 100 : 0;
-
-  return {
-    totalAppointments,
-    totalSent,
-    totalPending,
-    sendRate,
-  };
+  return { totalAppointments, totalSent, totalPending, sendRate };
 }
 
 export function calculateTimelineData(data: AppointmentWithPatient[]): TimelineData[] {
   const dateMap = new Map<string, { sent: number; pending: number }>();
 
   data.forEach(appointment => {
-    const date = appointment.appointment_date;
-    if (!date) return;
-
-    // Normaliza a chave para garantir agrupamento correto independente do separador
-    const parsed = safeParseDate(date);
-    if (!parsed) return;
-    const key = format(parsed, 'dd-MM-yyyy');
-
+    if (!appointment.created_at) return;
+    // Agrupa pelo dia em que a automação rodou (created_at)
+    const key = format(new Date(appointment.created_at), 'dd-MM-yyyy');
     if (!dateMap.has(key)) {
       dateMap.set(key, { sent: 0, pending: 0 });
     }
@@ -114,10 +89,7 @@ export function calculateTimelineData(data: AppointmentWithPatient[]): TimelineD
   });
 
   return Array.from(dateMap.entries())
-    .map(([date, values]) => ({
-      date,
-      ...values,
-    }))
+    .map(([date, values]) => ({ date, ...values }))
     .sort((a, b) => {
       const dateA = safeParseDate(a.date)?.getTime() ?? 0;
       const dateB = safeParseDate(b.date)?.getTime() ?? 0;
@@ -179,13 +151,10 @@ export function calculateProcedureData(data: AppointmentWithPatient[]): Procedur
 export function calculateHourlyData(data: AppointmentWithPatient[]): HourlyData[] {
   const hourMap = new Map<string, number>();
 
-  // Inicializa todas as horas
   for (let i = 0; i < 24; i++) {
     hourMap.set(`${i.toString().padStart(2, '0')}:00`, 0);
   }
 
-  // BUG FIX #3: Antes contava apenas message_sent=true, omitindo pendentes.
-  // O gráfico "Volume por Horário" deve mostrar TODOS os agendamentos por horário.
   data.forEach(appointment => {
     if (appointment.appointment_time) {
       const hour = appointment.appointment_time.substring(0, 2) + ':00';
@@ -194,10 +163,7 @@ export function calculateHourlyData(data: AppointmentWithPatient[]): HourlyData[
   });
 
   return Array.from(hourMap.entries())
-    .map(([hour, count]) => ({
-      hour,
-      count,
-    }))
+    .map(([hour, count]) => ({ hour, count }))
     .filter(item => {
       const hourNum = parseInt(item.hour);
       return hourNum >= 6 && hourNum <= 22;
@@ -208,14 +174,8 @@ export function getDailySuccessRate(data: AppointmentWithPatient[]): { date: str
   const dateMap = new Map<string, { sent: number; total: number }>();
 
   data.forEach(appointment => {
-    const date = appointment.appointment_date;
-    if (!date) return;
-
-    // Normaliza a chave igual ao calculateTimelineData
-    const parsed = safeParseDate(date);
-    if (!parsed) return;
-    const key = format(parsed, 'dd-MM-yyyy');
-
+    if (!appointment.created_at) return;
+    const key = format(new Date(appointment.created_at), 'dd-MM-yyyy');
     if (!dateMap.has(key)) {
       dateMap.set(key, { sent: 0, total: 0 });
     }
