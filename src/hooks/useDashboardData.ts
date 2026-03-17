@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { safeParseDate } from '@/lib/dates';
+import { safeParseDate, formatDateShort } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { 
   AppointmentWithPatient, 
@@ -10,34 +10,36 @@ import {
   ProcedureData,
   HourlyData
 } from '@/types/dashboard';
-import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { format } from 'date-fns';
 
 export function useDashboardData(filters: DashboardFilters) {
   return useQuery({
     queryKey: ['appointments', filters],
     queryFn: async () => {
+      // BUG FIX #1: O banco armazena datas como 'dd-MM-yyyy', então a ordenação
+      // por appointment_date (string) seria lexicográfica e incorreta.
+      // Ordenamos por created_at que é um timestamp ISO real.
       let query = supabase
         .from('appointments')
         .select(`
           *,
           patients (*)
         `)
-        .order('appointment_date', { ascending: false });
+        .order('created_at', { ascending: false });
 
-      // Apply date filters
+      // BUG FIX #2: Os filtros de data enviavam 'yyyy-MM-dd' para o Supabase,
+      // mas o banco armazena no formato 'dd-MM-yyyy'. Convertemos corretamente.
       if (filters.startDate) {
-        query = query.gte('appointment_date', format(filters.startDate, 'yyyy-MM-dd'));
+        query = query.gte('appointment_date', format(filters.startDate, 'dd-MM-yyyy'));
       }
       if (filters.endDate) {
-        query = query.lte('appointment_date', format(filters.endDate, 'yyyy-MM-dd'));
+        query = query.lte('appointment_date', format(filters.endDate, 'dd-MM-yyyy'));
       }
 
-      // Apply professional filter
       if (filters.professional && filters.professional !== 'all') {
         query = query.eq('professional_name', filters.professional);
       }
 
-      // Apply message status filter
       if (filters.messageStatus === 'sent') {
         query = query.eq('message_sent', true);
       } else if (filters.messageStatus === 'pending') {
@@ -93,10 +95,17 @@ export function calculateTimelineData(data: AppointmentWithPatient[]): TimelineD
 
   data.forEach(appointment => {
     const date = appointment.appointment_date;
-    if (!dateMap.has(date)) {
-      dateMap.set(date, { sent: 0, pending: 0 });
+    if (!date) return;
+
+    // Normaliza a chave para garantir agrupamento correto independente do separador
+    const parsed = safeParseDate(date);
+    if (!parsed) return;
+    const key = format(parsed, 'dd-MM-yyyy');
+
+    if (!dateMap.has(key)) {
+      dateMap.set(key, { sent: 0, pending: 0 });
     }
-    const current = dateMap.get(date)!;
+    const current = dateMap.get(key)!;
     if (appointment.message_sent) {
       current.sent++;
     } else {
@@ -170,13 +179,15 @@ export function calculateProcedureData(data: AppointmentWithPatient[]): Procedur
 export function calculateHourlyData(data: AppointmentWithPatient[]): HourlyData[] {
   const hourMap = new Map<string, number>();
 
-  // Initialize all hours
+  // Inicializa todas as horas
   for (let i = 0; i < 24; i++) {
     hourMap.set(`${i.toString().padStart(2, '0')}:00`, 0);
   }
 
+  // BUG FIX #3: Antes contava apenas message_sent=true, omitindo pendentes.
+  // O gráfico "Volume por Horário" deve mostrar TODOS os agendamentos por horário.
   data.forEach(appointment => {
-    if (appointment.appointment_time && appointment.message_sent) {
+    if (appointment.appointment_time) {
       const hour = appointment.appointment_time.substring(0, 2) + ':00';
       hourMap.set(hour, (hourMap.get(hour) || 0) + 1);
     }
@@ -198,10 +209,17 @@ export function getDailySuccessRate(data: AppointmentWithPatient[]): { date: str
 
   data.forEach(appointment => {
     const date = appointment.appointment_date;
-    if (!dateMap.has(date)) {
-      dateMap.set(date, { sent: 0, total: 0 });
+    if (!date) return;
+
+    // Normaliza a chave igual ao calculateTimelineData
+    const parsed = safeParseDate(date);
+    if (!parsed) return;
+    const key = format(parsed, 'dd-MM-yyyy');
+
+    if (!dateMap.has(key)) {
+      dateMap.set(key, { sent: 0, total: 0 });
     }
-    const current = dateMap.get(date)!;
+    const current = dateMap.get(key)!;
     current.total++;
     if (appointment.message_sent) {
       current.sent++;
