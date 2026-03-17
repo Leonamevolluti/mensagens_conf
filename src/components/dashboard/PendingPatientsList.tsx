@@ -3,13 +3,35 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AppointmentWithPatient } from '@/types/dashboard';
 import { formatDateFull } from '@/lib/dates';
+import { format, subDays } from 'date-fns';
 
 interface PendingPatientsListProps {
   data: AppointmentWithPatient[];
 }
 
 export function PendingPatientsList({ data }: PendingPatientsListProps) {
-  const pendingData = data.filter(a => !a.message_sent).slice(0, 15);
+  const todayStr = format(new Date(), 'dd/MM/yyyy');
+
+  // Mesmo critério do RecentSendsTable:
+  // mensagem_enviada começa com hoje OU created_at no range do dia Brasil (UTC-3)
+  const nowUTC = new Date();
+  const start = new Date(subDays(nowUTC, 1));
+  start.setUTCHours(21, 0, 0, 0);
+  const end = new Date(nowUTC);
+  end.setUTCHours(21, 0, 0, 0);
+
+  const pendingData = data.filter(a => {
+    if (a.message_sent) return false; // só pendentes/erro
+
+    if (a.mensagem_enviada) {
+      return a.mensagem_enviada.startsWith(todayStr);
+    }
+    if (a.created_at) {
+      const ts = new Date(a.created_at).getTime();
+      return ts >= start.getTime() && ts < end.getTime();
+    }
+    return false;
+  });
 
   return (
     <Card className="h-full">
@@ -18,6 +40,9 @@ export function PendingPatientsList({ data }: PendingPatientsListProps) {
           <AlertCircle className="h-5 w-5 text-warning" />
           <CardTitle className="text-lg font-semibold">Mensagens Pendentes</CardTitle>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Erros e pendências de hoje • {pendingData.length} registros
+        </p>
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea className="h-[350px]">
@@ -28,7 +53,7 @@ export function PendingPatientsList({ data }: PendingPatientsListProps) {
                   <AlertCircle className="h-6 w-6 text-success" />
                 </div>
                 <p className="text-muted-foreground">
-                  Nenhuma mensagem pendente!
+                  Nenhuma mensagem pendente hoje!
                 </p>
               </div>
             ) : (
